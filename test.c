@@ -4,6 +4,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 void my_watcher(zhandle_t *zh, int type, int state, const char *path, void *watcherCtx) {
     printf("watcher: %d %s\n", type, path);
@@ -13,13 +16,70 @@ int my_node_name_cmp(const void *pname1, const void *pname2) {
     return strcmp(*(const char **)pname1, *(const char **)pname2);
 }
 
+void my_lock_watcher(zhandle_t *zh, int type, int state, const char *path, void *watcherCtx) {
+    printf("\nnode changed!\n");
+}
+
+void my_watch_lock(zhandle_t *zh, char *my_node_name) {
+    int i = 0;
+    int stat = 0;
+    char path[255];
+    struct String_vector nodes = {0, NULL};
+
+    stat = zoo_get_children(zh, "/locks/jobmaker", 0, &nodes);
+
+    if (ZOK != stat) {
+        printf("Zookeeper: get children for /locks/jobmaker failed!");
+        exit(1);
+    }
+
+    // it should not be 0 because of a new node added for the process.
+    assert(nodes.count > 0);
+
+    for (i=0; i<nodes.count; i++) {
+        printf("nodes %d: %s\n", i, nodes.data[i]);
+    }
+
+    qsort(nodes.data, nodes.count, sizeof(nodes.data), my_node_name_cmp);
+
+    for (i=0; i<nodes.count; i++) {
+        printf("sorted nodes %d: %s\n", i, nodes.data[i]);
+    }
+    
+    printf("cmp: %s - %s\n", my_node_name, nodes.data[0]);
+
+    if (0 == strcmp(my_node_name, nodes.data[0])) {
+        printf("get the lock\n");
+    }
+    else {
+        printf("wait for lock\n");
+
+        // find the process itself
+        for (i=0; strcmp(my_node_name, nodes.data[i]); i++);
+
+        // it should not be the first node
+        assert(i > 0);
+
+        // get the before node path
+        strcpy(path, "/locks/jobmaker/");
+        strcat(path, nodes.data[i - 1]);
+
+        // watch the before node
+        stat = zoo_wexists(zh, path, my_lock_watcher, NULL, NULL);
+
+        printf("watch node %s -> %s\n", path, zerror(stat));
+
+        sleep(0);
+
+        printf("I'm wake!\n");
+    }
+
+}
+
 int main() {
     zhandle_t *zh = NULL;
     int stat = 0;
     char path[255] = {0};
-    char buff[1024] = {0};
-    int len = 1024;
-    struct String_vector nodes = {0, NULL};
     int i = 0;
 
     zh = zookeeper_init("127.0.0.1:2181", my_watcher, 10000, NULL, NULL, 0);
@@ -46,36 +106,13 @@ int main() {
         exit(1);
     }
 
-    stat = zoo_get_children(zh, "/locks/jobmaker", 0, &nodes);
-
-    if (ZOK != stat) {
-        printf("Zookeeper: get children for /locks/jobmaker failed!");
-        exit(1);
-    }
-
-    // it should not be 0 because of a new node added for the process.
-    assert(nodes.count > 0);
-
-    for (i=0; i<nodes.count; i++) {
-        printf("nodes %d: %s\n", i, nodes.data[i]);
-    }
-
-    qsort(nodes.data, nodes.count, sizeof(nodes.data), my_node_name_cmp);
-
-    for (i=0; i<nodes.count; i++) {
-        printf("sorted nodes %d: %s\n", i, nodes.data[i]);
-    }
-    
-    printf("cmp: %s - %s\n", path + 16, nodes.data[0]);
-    if (0 == strcmp(path + 16, nodes.data[0])) {
-        printf("get the lock\n");
-    }
-    else {
-        printf("wait for lock\n");
-    }
+    my_watch_lock(zh, path + 16);
 
     printf("------ Press Enter and Exit");
     getchar();
+
+    // remove the lock
+    zoo_delete(zh, path, -1);
 
     zookeeper_close(zh);
 

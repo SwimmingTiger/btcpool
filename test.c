@@ -3,9 +3,14 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+#include <assert.h>
 
 void my_watcher(zhandle_t *zh, int type, int state, const char *path, void *watcherCtx) {
     printf("watcher: %d %s\n", type, path);
+}
+
+int my_node_name_cmp(const void *pname1, const void *pname2) {
+    return strcmp(*(const char **)pname1, *(const char **)pname2);
 }
 
 int main() {
@@ -48,8 +53,25 @@ int main() {
         exit(1);
     }
 
+    // it should not be 0 because of a new node added for the process.
+    assert(nodes.count > 0);
+
     for (i=0; i<nodes.count; i++) {
         printf("nodes %d: %s\n", i, nodes.data[i]);
+    }
+
+    qsort(nodes.data, nodes.count, sizeof(nodes.data), my_node_name_cmp);
+
+    for (i=0; i<nodes.count; i++) {
+        printf("sorted nodes %d: %s\n", i, nodes.data[i]);
+    }
+    
+    printf("cmp: %s - %s\n", path + 16, nodes.data[0]);
+    if (0 == strcmp(path + 16, nodes.data[0])) {
+        printf("get the lock\n");
+    }
+    else {
+        printf("wait for lock\n");
     }
 
     printf("------ Press Enter and Exit");

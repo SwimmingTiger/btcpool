@@ -7,6 +7,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#include <pthread.h>
 
 void my_watcher(zhandle_t *zh, int type, int state, const char *path, void *watcherCtx) {
     printf("watcher: %d %s\n", type, path);
@@ -17,7 +18,13 @@ int my_node_name_cmp(const void *pname1, const void *pname2) {
 }
 
 void my_lock_watcher(zhandle_t *zh, int type, int state, const char *path, void *watcherCtx) {
+    pthread_mutex_t *mutex;
+
+    mutex = (pthread_mutex_t *)watcherCtx;
+
     printf("\nnode changed!\n");
+
+    pthread_mutex_unlock(mutex);
 }
 
 void my_watch_lock(zhandle_t *zh, char *my_node_name) {
@@ -25,6 +32,7 @@ void my_watch_lock(zhandle_t *zh, char *my_node_name) {
     int stat = 0;
     char path[255];
     struct String_vector nodes = {0, NULL};
+    pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
     stat = zoo_get_children(zh, "/locks/jobmaker", 0, &nodes);
 
@@ -65,13 +73,16 @@ void my_watch_lock(zhandle_t *zh, char *my_node_name) {
         strcat(path, nodes.data[i - 1]);
 
         // watch the before node
-        stat = zoo_wexists(zh, path, my_lock_watcher, NULL, NULL);
+        stat = zoo_wexists(zh, path, my_lock_watcher, &mutex, NULL);
 
         printf("watch node %s -> %s\n", path, zerror(stat));
 
-        sleep(0);
-
-        printf("I'm wake!\n");
+        // block the thread until get the lock
+        // lock twice so the thread blocked
+        pthread_mutex_lock(&mutex);
+        pthread_mutex_lock(&mutex);
+        
+        printf("\nI'm wake!!!\n");
     }
 
 }

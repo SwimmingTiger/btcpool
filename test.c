@@ -27,7 +27,7 @@ void my_lock_watcher(zhandle_t *zh, int type, int state, const char *path, void 
     pthread_mutex_unlock(mutex);
 }
 
-void my_watch_lock(zhandle_t *zh, char *my_node_name) {
+int my_get_lock(zhandle_t *zh, char *my_node_name) {
     int i = 0;
     int stat = 0;
     char path[255];
@@ -58,6 +58,8 @@ void my_watch_lock(zhandle_t *zh, char *my_node_name) {
 
     if (0 == strcmp(my_node_name, nodes.data[0])) {
         printf("get the lock\n");
+
+        return 1;
     }
     else {
         printf("wait for lock\n");
@@ -83,6 +85,8 @@ void my_watch_lock(zhandle_t *zh, char *my_node_name) {
         pthread_mutex_lock(&mutex);
         
         printf("\nI'm wake!!!\n");
+
+        return 0;
     }
 
 }
@@ -117,7 +121,10 @@ int main() {
         exit(1);
     }
 
-    my_watch_lock(zh, path + 16);
+    // wait the lock
+    // it isn't a busy waiting because my_get_lock() will
+    // block itself with pthread_mutex_lock().
+    while(!my_get_lock(zh, path + 16));
 
     printf("------ Press Enter and Exit");
     getchar();
